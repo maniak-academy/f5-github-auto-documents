@@ -1,13 +1,5 @@
-# f5-github-auto-documents
+# F5 Devices Overview
 
-docker run -d \
-  --name github-runner \
-  -e RUNNER_NAME=github-runner \
-  -e RUNNER_WORKDIR=/tmp/github-runner \
-  -e RUNNER_TOKEN=<YOUR_RUNNER_TOKEN> \
-  -e RUNNER_REPOSITORY_URL=https://github.com/maniak-academy/f5-github-auto-documents \
-  -e RUNNER_LABELS=self-hosted,Linux,X64 \
-  -e ORG_RUNNER=false \
-  -e RUN_AS_ROOT=true \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  myoung34/github-runner:latest
+| Device IP | Hostname | Virtual Server Count |
+|-----------|----------|----------------------|
+| [f5.maniak.lab](device_f5_maniak_lab.md) | bigip.maniak.lab | 2 |

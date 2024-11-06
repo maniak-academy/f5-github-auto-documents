@@ -17,16 +17,18 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
 
-      - name: Install Dependencies
+      - name: Install pip and Dependencies
         run: |
-          pip install requests urllib3
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install requests urllib3
 
       - name: Run F5 Info Script
         env:
           BIGIP_USERNAME: ${{ secrets.BIGIP_USERNAME }}
           BIGIP_PASSWORD: ${{ secrets.BIGIP_PASSWORD }}
         run: |
-          python f5_info_script.py
+          python3 f5_info_script.py
 
       - name: Commit and Push Changes
         env:
