@@ -26,8 +26,13 @@ jobs:
         run: |
           python f5_info_script.py
 
-      - name: Upload Report Artifact
+      - name: Upload Report Artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: f5-report
-          path: f5_virtual_servers_and_pools_by_device.md
+          name: f5-reports
+          path: |
+            index.md
+            device_*.md
+            virtual_servers_*.csv
+            pool_members_*.csv
+            problematic_virtual_servers.csv

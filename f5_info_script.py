@@ -7,6 +7,7 @@ import urllib3
 import json
 from urllib.parse import quote
 from collections import defaultdict
+import getpass
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -14,14 +15,14 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Define variables
 device_list_file = "list.txt"  # The file containing the list of BIG-IP device IPs
 
-# Get username and password from environment variables
-bigip_username = os.environ.get('BIGIP_USERNAME')
-bigip_password = os.environ.get('BIGIP_PASSWORD')
-
-# Check if credentials are provided
-if not bigip_username or not bigip_password:
-    print("Error: BIGIP_USERNAME and/or BIGIP_PASSWORD environment variables not set.")
-    sys.exit(1)
+# Get username and password from environment variables or prompt
+if 'BIGIP_USERNAME' in os.environ and 'BIGIP_PASSWORD' in os.environ:
+    bigip_username = os.environ.get('BIGIP_USERNAME')
+    bigip_password = os.environ.get('BIGIP_PASSWORD')
+else:
+    # Prompt for username and password
+    bigip_username = input("Enter BIG-IP username: ")
+    bigip_password = getpass.getpass("Enter BIG-IP password: ")
 
 # Read the list of devices from the file
 if os.path.exists(device_list_file):
@@ -83,6 +84,7 @@ def get_device_hostname(bigip_address, auth_token):
 # Dictionaries to keep track of virtual servers and pool members per device
 virtual_servers_by_device = defaultdict(list)
 pool_members_by_device_vs = defaultdict(lambda: defaultdict(list))
+hostnames_by_device = {}
 problematic_vs = []
 
 # Iterate over the BIG-IP addresses and collect stats from each
@@ -95,6 +97,7 @@ for bigip_address in bigip_addresses:
 
         # Retrieve device hostname
         hostname = get_device_hostname(bigip_address, auth_token)
+        hostnames_by_device[bigip_address] = hostname
 
         # Retrieve virtual server list
         try:
@@ -200,57 +203,84 @@ for bigip_address in bigip_addresses:
     else:
         print(f"Skipping {bigip_address} due to authentication failure.")
 
-# Now, generate the single Markdown file
-md_output_file = "f5_virtual_servers_and_pools_by_device.md"
+# Generate the main Markdown file
+main_md_file = "README.md"  # Change from "index.md" to "README.md"
+with open(main_md_file, 'w', encoding='utf-8') as mdfile:
+    mdfile.write("# F5 Devices Overview\n\n")
+    mdfile.write("| Device IP | Hostname | Virtual Server Count |\n")
+    mdfile.write("|-----------|----------|----------------------|\n")
+    for device_ip in bigip_addresses:
+        hostname = hostnames_by_device.get(device_ip, 'Unknown')
+        vs_count = len(virtual_servers_by_device[device_ip])
+        device_md_filename = f"device_{device_ip.replace('.', '_')}.md"
+        mdfile.write(f"| [{device_ip}]({device_md_filename}) | {hostname} | {vs_count} |\n")
 
-# Start building the Markdown content
-md_content = "# F5 Virtual Servers and Pool Members Overview by Device\n\n"
+print(f"Main Markdown file generated: {main_md_file}")
 
+# Generate Markdown and CSV files per device
 for device_ip in bigip_addresses:
+    hostname = hostnames_by_device.get(device_ip, 'Unknown')
+    device_md_filename = f"device_{device_ip.replace('.', '_')}.md"
+    vs_csv_filename = f"virtual_servers_{device_ip.replace('.', '_')}.csv"
+    pool_csv_filename = f"pool_members_{device_ip.replace('.', '_')}.csv"
+
+    # Generate Markdown file for the device
+    with open(device_md_filename, 'w', encoding='utf-8') as mdfile:
+        mdfile.write(f"# Device: {hostname} ({device_ip})\n\n")
+
+        # Virtual Servers Table
+        mdfile.write("## Virtual Servers\n\n")
+        mdfile.write("| Virtual Server Name | Destination | IP Protocol | Enabled | Status | Pool |\n")
+        mdfile.write("|---------------------|-------------|-------------|---------|--------|------|\n")
+
+        for vs_stat in virtual_servers_by_device[device_ip]:
+            vs_name_anchor = vs_stat['VirtualServerName'].replace('/', '_').replace(' ', '_')
+            mdfile.write(f"| [{vs_stat['VirtualServerName']}](#{vs_name_anchor}) | {vs_stat['Destination']} | {vs_stat['IPProtocol']} | {vs_stat['Enabled']} | {vs_stat['Status']} | {vs_stat['Pool']} |\n")
+
+        mdfile.write("\n")
+
+        # Detailed Pool Member Sections
+        mdfile.write("## Pool Member Details\n\n")
+
+        for vs_stat in virtual_servers_by_device[device_ip]:
+            vs_name = vs_stat['VirtualServerName']
+            vs_name_anchor = vs_name.replace('/', '_').replace(' ', '_')
+            mdfile.write(f"### {vs_name}\n")
+            mdfile.write(f"<a id='{vs_name_anchor}'></a>\n\n")
+            pool_members = pool_members_by_device_vs[device_ip].get(vs_name, [])
+            if pool_members:
+                mdfile.write("| Pool Name | Member Name | Address | State | Session | Monitor Status | Enabled |\n")
+                mdfile.write("|-----------|-------------|---------|-------|---------|----------------|---------|\n")
+                for member_stat in pool_members:
+                    mdfile.write(f"| {member_stat['PoolName']} | {member_stat['MemberName']} | {member_stat['Address']} | {member_stat['State']} | {member_stat['Session']} | {member_stat['MonitorStatus']} | {member_stat['Enabled']} |\n")
+                mdfile.write("\n")
+            else:
+                mdfile.write("No pool members associated with this virtual server.\n\n")
+
+    print(f"Markdown file for device {device_ip} generated: {device_md_filename}")
+
+    # Export virtual server stats to CSV
     if virtual_servers_by_device[device_ip]:
-        hostname = virtual_servers_by_device[device_ip][0]['Hostname']
-    else:
-        hostname = 'Unknown'
-    device_anchor = device_ip.replace('.', '_')
-    md_content += f"## Device: {hostname} ({device_ip})\n"
-    md_content += f"<a id='{device_anchor}'></a>\n\n"
+        with open(vs_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'Destination', 'IPProtocol', 'Enabled', 'Status', 'Pool']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for vs_stat in virtual_servers_by_device[device_ip]:
+                writer.writerow(vs_stat)
+        print(f"Virtual server CSV for device {device_ip} exported: {vs_csv_filename}")
 
-    # Virtual Servers Table
-    md_content += "### Virtual Servers\n\n"
-    md_content += "| Virtual Server Name | Destination | IP Protocol | Enabled | Status | Pool |\n"
-    md_content += "|---------------------|-------------|-------------|---------|--------|------|\n"
-
-    for vs_stat in virtual_servers_by_device[device_ip]:
-        vs_name_anchor = vs_stat['VirtualServerName'].replace('/', '_').replace(' ', '_')
-        md_content += f"| [{vs_stat['VirtualServerName']}](#{vs_name_anchor}) | {vs_stat['Destination']} | {vs_stat['IPProtocol']} | {vs_stat['Enabled']} | {vs_stat['Status']} | {vs_stat['Pool']} |\n"
-
-    md_content += "\n"
-
-    # Detailed Pool Member Sections
-    md_content += "### Pool Member Details\n\n"
-
-    for vs_stat in virtual_servers_by_device[device_ip]:
-        vs_name = vs_stat['VirtualServerName']
-        vs_name_anchor = vs_name.replace('/', '_').replace(' ', '_')
-        md_content += f"#### {vs_name}\n"
-        md_content += f"<a id='{vs_name_anchor}'></a>\n\n"
-        pool_members = pool_members_by_device_vs[device_ip].get(vs_name, [])
-        if pool_members:
-            md_content += "| Pool Name | Member Name | Address | State | Session | Monitor Status | Enabled |\n"
-            md_content += "|-----------|-------------|---------|-------|---------|----------------|---------|\n"
+    # Export pool member stats to CSV
+    pool_members = []
+    for vs_name, members in pool_members_by_device_vs[device_ip].items():
+        pool_members.extend(members)
+    if pool_members:
+        with open(pool_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'PoolName', 'MemberName', 'Address', 'State', 'Session', 'MonitorStatus', 'Enabled']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
             for member_stat in pool_members:
-                md_content += f"| {member_stat['PoolName']} | {member_stat['MemberName']} | {member_stat['Address']} | {member_stat['State']} | {member_stat['Session']} | {member_stat['MonitorStatus']} | {member_stat['Enabled']} |\n"
-            md_content += "\n"
-        else:
-            md_content += "No pool members associated with this virtual server.\n\n"
-
-    md_content += "[Back to Top](#f5-virtual-servers-and-pool-members-overview-by-device)\n\n"
-
-# Write the Markdown content to the file
-with open(md_output_file, 'w', encoding='utf-8') as mdfile:
-    mdfile.write(md_content)
-
-print(f"All virtual server and pool member information exported to {md_output_file}.")
+                writer.writerow(member_stat)
+        print(f"Pool member CSV for device {device_ip} exported: {pool_csv_filename}")
 
 # Export list of problematic virtual servers if any
 if problematic_vs:
