@@ -1,0 +1,33 @@
+name: Run F5 Info Script
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: self-hosted  # Use your self-hosted runner
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: |
+          pip install requests urllib3
+
+      - name: Run F5 Info Script
+        env:
+          BIGIP_USERNAME: ${{ secrets.BIGIP_USERNAME }}
+          BIGIP_PASSWORD: ${{ secrets.BIGIP_PASSWORD }}
+        run: |
+          python f5_info_script.py
+
+      - name: Upload Report Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: f5-report
+          path: f5_virtual_servers_and_pools_by_device.md
