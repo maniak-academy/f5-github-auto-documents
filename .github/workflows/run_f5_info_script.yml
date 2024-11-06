@@ -5,15 +5,17 @@ on:
 
 jobs:
   run-script:
-    runs-on: self-hosted  # Use your self-hosted runner
+    runs-on: self-hosted
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          persist-credentials: false  # Important for using custom auth
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
 
       - name: Install Dependencies
         run: |
@@ -26,13 +28,11 @@ jobs:
         run: |
           python f5_info_script.py
 
-      - name: Upload Report Artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: f5-reports
-          path: |
-            index.md
-            device_*.md
-            virtual_servers_*.csv
-            pool_members_*.csv
-            problematic_virtual_servers.csv
+      - name: Commit and Push Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git pull origin ${GITHUB_REF#refs/heads/} --rebase
+          git add README.md device_*.md virtual_servers_*.csv pool_members_*.csv problematic_virtual_servers.csv
+          git commit -m "Update F5 reports [skip ci]" || echo "No changes to commit"
+          git push https://${GITHUB_ACTOR}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:${GITHUB_REF#refs/heads/}
