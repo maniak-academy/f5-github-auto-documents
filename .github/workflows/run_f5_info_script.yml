@@ -1,27 +1,22 @@
-name: Run F5 Info Script
+name: Deploy to GitHub Pages
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main  # Or any branch where you trigger this action
 
 jobs:
-  run-script:
+  build-and-deploy:
     runs-on: self-hosted
+
     steps:
-      - name: Checkout Repository
+      - name: Check out the repository
         uses: actions/checkout@v3
-        with:
-          persist-credentials: false  # Important for using custom auth
 
-      - name: Set up Git
+      - name: Set up GitHub Actions Bot Identity
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'actions@github.com'
-
-      - name: Install pip and Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip3 install requests urllib3
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Run F5 Info Script
         env:
@@ -36,5 +31,12 @@ jobs:
         run: |
           git pull origin ${GITHUB_REF#refs/heads/} --rebase
           git add README.md device_*.md virtual_servers_*.csv pool_members_*.csv problematic_virtual_servers.csv
-          git commit -m "Update F5 reports [skip ci]" || echo "No changes to commit"
+          git commit -m "Update F5 reports for GitHub Pages [skip ci]" || echo "No changes to commit"
           git push https://${GITHUB_ACTOR}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:${GITHUB_REF#refs/heads/}
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages  # Change to the branch you've set up for GitHub Pages
+          publish_dir: ./  # Adjust this to point to your generated content (e.g., 'docs/' if you’re using that)
