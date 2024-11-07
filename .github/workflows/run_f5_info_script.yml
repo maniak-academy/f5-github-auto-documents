@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main  # Or any branch where you trigger this action
+      - main  # Change as needed
 
 jobs:
   build-and-deploy:
@@ -38,5 +38,5 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages  # Change to the branch you've set up for GitHub Pages
-          publish_dir: ./  # Adjust this to point to your generated content (e.g., 'docs/' if you’re using that)
+          publish_branch: gh-pages
+          publish_dir: ./  # Adjust to point to your generated content directory

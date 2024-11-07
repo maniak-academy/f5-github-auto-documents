@@ -1,0 +1,3 @@
+Device,Hostname,VirtualServerName,Destination,IPProtocol,Enabled,Status,Pool
+f5.maniak.lab,bigip.maniak.lab,juiceshop_redirect,,,,unknown,No Pool
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,,,,offline,juiceshop_pool

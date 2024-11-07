@@ -7,7 +7,6 @@ import urllib3
 import json
 from urllib.parse import quote
 from collections import defaultdict
-import getpass
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -15,14 +14,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Define variables
 device_list_file = "list.txt"  # The file containing the list of BIG-IP device IPs
 
-# Get username and password from environment variables or prompt
-if 'BIGIP_USERNAME' in os.environ and 'BIGIP_PASSWORD' in os.environ:
-    bigip_username = os.environ.get('BIGIP_USERNAME')
-    bigip_password = os.environ.get('BIGIP_PASSWORD')
-else:
-    # Prompt for username and password
-    bigip_username = input("Enter BIG-IP username: ")
-    bigip_password = getpass.getpass("Enter BIG-IP password: ")
+# Get username and password from environment variables
+bigip_username = os.environ.get('BIGIP_USERNAME')
+bigip_password = os.environ.get('BIGIP_PASSWORD')
+
+if not bigip_username or not bigip_password:
+    print("Error: BIGIP_USERNAME or BIGIP_PASSWORD environment variables are not set.")
+    sys.exit(1)
 
 # Read the list of devices from the file
 if os.path.exists(device_list_file):
