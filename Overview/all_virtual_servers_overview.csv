@@ -1,0 +1,3 @@
+Device,Hostname,VirtualServerName,Status,Connections,MaxConnections,Pool
+f5.maniak.lab,bigip.maniak.lab,juiceshop_redirect,unknown,N/A,N/A,No Pool
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,offline,N/A,N/A,juiceshop_pool
