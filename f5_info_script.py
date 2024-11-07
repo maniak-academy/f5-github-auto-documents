@@ -141,14 +141,18 @@ for bigip_address in bigip_addresses:
                 vs_status_entry = next(iter(entries.values()))
                 vs_status = vs_status_entry['nestedStats']['entries']['status.availabilityState']['description']
 
+                # Extract connections and max connections
+                connections = vs_status_entry['nestedStats']['entries'].get('clientside.curConns', {}).get('description', 'N/A')
+                max_connections = vs_status_entry['nestedStats']['entries'].get('clientside.maxConns', {}).get('description', 'N/A')
+
+                # Updated vs_stat dictionary without Destination, IPProtocol, and Enabled
                 vs_stat = {
                     'Device': bigip_address,
                     'Hostname': hostname,
                     'VirtualServerName': vs_config_response.get('fullPath', ''),
-                    'Destination': vs_config_response.get('destination', ''),
-                    'IPProtocol': vs_config_response.get('ipProtocol', ''),
-                    'Enabled': vs_config_response.get('enabled', ''),
                     'Status': vs_status,
+                    'Connections': connections,           # New field
+                    'MaxConnections': max_connections,   # New field
                     'Pool': pool_name or 'No Pool'
                 }
                 virtual_servers_by_device[bigip_address].append(vs_stat)  # Collecting virtual servers per device
@@ -228,12 +232,13 @@ for device_ip in bigip_addresses:
 
         # Virtual Servers Table
         mdfile.write("## Virtual Servers\n\n")
-        mdfile.write("| Virtual Server Name | Destination | IP Protocol | Enabled | Status | Pool |\n")
-        mdfile.write("|---------------------|-------------|-------------|---------|--------|------|\n")
+        # Updated table headers to exclude Destination, IP Protocol, and Enabled
+        mdfile.write("| Virtual Server Name | Status | Connections | Max Connections | Pool |\n")
+        mdfile.write("|---------------------|--------|-------------|-----------------|------|\n")
 
         for vs_stat in virtual_servers_by_device[device_ip]:
             vs_name_anchor = vs_stat['VirtualServerName'].replace('/', '_').replace(' ', '_')
-            mdfile.write(f"| [{vs_stat['VirtualServerName']}](#{vs_name_anchor}) | {vs_stat['Destination']} | {vs_stat['IPProtocol']} | {vs_stat['Enabled']} | {vs_stat['Status']} | {vs_stat['Pool']} |\n")
+            mdfile.write(f"| [{vs_stat['VirtualServerName']}](#{vs_name_anchor}) | {vs_stat['Status']} | {vs_stat['Connections']} | {vs_stat['MaxConnections']} | {vs_stat['Pool']} |\n")
 
         mdfile.write("\n")
 
@@ -260,7 +265,8 @@ for device_ip in bigip_addresses:
     # Export virtual server stats to CSV
     if virtual_servers_by_device[device_ip]:
         with open(vs_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'Destination', 'IPProtocol', 'Enabled', 'Status', 'Pool']
+            # Updated fieldnames to exclude Destination, IPProtocol, and Enabled
+            fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'Status', 'Connections', 'MaxConnections', 'Pool']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for vs_stat in virtual_servers_by_device[device_ip]:
