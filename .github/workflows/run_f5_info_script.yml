@@ -30,7 +30,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git pull origin ${GITHUB_REF#refs/heads/} --rebase
-          git add README.md device_*.md virtual_servers_*.csv pool_members_*.csv problematic_virtual_servers.csv
+          git add .  # Add all files in the directory
           git commit -m "Update F5 reports for GitHub Pages [skip ci]" || echo "No changes to commit"
           git push https://${GITHUB_ACTOR}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:${GITHUB_REF#refs/heads/}
 
@@ -39,4 +39,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
-          publish_dir: ./  # Adjust to point to your generated content directory
+          publish_dir: ./  # Ensure this is set to the root or where files are generated
