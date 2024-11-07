@@ -7,6 +7,7 @@ import urllib3
 import json
 import datetime
 import logging
+import matplotlib.pyplot as plt  # For generating the chart
 from urllib.parse import quote
 from collections import defaultdict
 
@@ -184,19 +185,6 @@ for bigip_address in bigip_addresses:
                     'Pool': pool_name or 'No Pool'
                 })
 
-                # Updated vs_stat dictionary without Destination, IPProtocol, and Enabled
-                vs_stat = {
-                    'Device': bigip_address,
-                    'Hostname': hostname,
-                    'VirtualServerName': vs_config_response.get('fullPath', ''),
-                    'Status': vs_status,
-                    'Connections': connections,
-                    'MaxConnections': max_connections,
-                    'Pool': pool_name or 'No Pool'
-                }
-                virtual_servers_by_device[bigip_address].append(vs_stat)
-                logging.info(f"Collected stats for virtual server {vs_stat['VirtualServerName']}.")
-
             except Exception as e:
                 logging.error(f"Failed to retrieve configuration or status for virtual server {vs_name} on {bigip_address}: {e}")
                 # Add the problematic virtual server to the list
@@ -212,7 +200,7 @@ for bigip_address in bigip_addresses:
     else:
         logging.warning(f"Skipping {bigip_address} due to authentication failure.")
 
-# Generate the Overview CSV file
+# Generate the consolidated overview CSV file
 overview_csv_path = os.path.join(overview_dir, "all_virtual_servers_overview.csv")
 with open(overview_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
     fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'Status', 'Connections', 'MaxConnections', 'Pool']
@@ -223,15 +211,32 @@ with open(overview_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
 
 logging.info(f"Overview CSV file generated: {overview_csv_path}")
 
-# Generate the Overview Markdown file
+# Generate the chart for the top virtual servers by max connections
+top_virtual_servers = sorted(all_virtual_servers, key=lambda x: int(x['MaxConnections']) if x['MaxConnections'] != 'N/A' else 0, reverse=True)[:10]
+vs_names = [vs['VirtualServerName'] for vs in top_virtual_servers]
+max_conns = [int(vs['MaxConnections']) if vs['MaxConnections'] != 'N/A' else 0 for vs in top_virtual_servers]
+
+plt.figure(figsize=(10, 6))
+plt.barh(vs_names, max_conns)
+plt.xlabel('Max Connections')
+plt.ylabel('Virtual Server Name')
+plt.title('Top 10 Virtual Servers by Max Connections')
+plt.gca().invert_yaxis()
+chart_path = os.path.join(overview_dir, "top_virtual_servers_chart.png")
+plt.savefig(chart_path)
+plt.close()
+
+logging.info(f"Chart generated and saved at {chart_path}")
+
+# Generate the consolidated overview Markdown file with chart
 overview_md_path = os.path.join(overview_dir, "all_virtual_servers_overview.md")
 with open(overview_md_path, 'w', encoding='utf-8') as mdfile:
     mdfile.write("# Overview of All Virtual Servers\n\n")
+    mdfile.write(f"![Top 10 Virtual Servers by Max Connections]({chart_path})\n\n")
     mdfile.write("| Device IP | Hostname | Virtual Server Name | Status | Connections | Max Connections | Pool |\n")
     mdfile.write("|-----------|----------|---------------------|--------|-------------|-----------------|------|\n")
     for vs_stat in all_virtual_servers:
         mdfile.write(f"| {vs_stat['Device']} | {vs_stat['Hostname']} | {vs_stat['VirtualServerName']} | {vs_stat['Status']} | {vs_stat['Connections']} | {vs_stat['MaxConnections']} | {vs_stat['Pool']} |\n")
 
 logging.info(f"Overview Markdown file generated: {overview_md_path}")
-
 logging.info("Script execution completed.")
