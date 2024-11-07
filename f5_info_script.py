@@ -5,6 +5,8 @@ import os
 import sys
 import urllib3
 import json
+import datetime  # New import for handling timestamps
+import logging     # New import for logging
 from urllib.parse import quote
 from collections import defaultdict
 
@@ -30,6 +32,26 @@ else:
     print(f"Device list file '{device_list_file}' not found.")
     sys.exit(1)
 
+# Generate a timestamp for the current run
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = f"run_{timestamp}"
+
+# Create the timestamped folder
+os.makedirs(output_dir, exist_ok=True)
+print(f"Created output directory: {output_dir}")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(output_dir, "execution_log.txt")),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+logging.info(f"Script executed on: {timestamp}\n")
+
 # Function to authenticate and get auth token
 def get_auth_token(bigip_address):
     base_uri = f"https://{bigip_address}/mgmt"
@@ -41,14 +63,14 @@ def get_auth_token(bigip_address):
     }
     headers = {'Content-Type': 'application/json'}
     try:
-        print(f"Attempting to authenticate with {bigip_address}...")
+        logging.info(f"Attempting to authenticate with {bigip_address}...")
         response = requests.post(auth_url, json=auth_body, headers=headers, verify=False)
         response.raise_for_status()
         auth_response = response.json()
-        print(f"Authentication successful with {bigip_address}.")
+        logging.info(f"Authentication successful with {bigip_address}.")
         return auth_response['token']['token']
     except Exception as e:
-        print(f"Failed to authenticate with {bigip_address}: {e}")
+        logging.error(f"Failed to authenticate with {bigip_address}: {e}")
         return None
 
 # Function to logout
@@ -57,10 +79,10 @@ def logout(bigip_address, auth_token):
     logout_url = f"{base_uri}/shared/authz/logout"
     headers = {'X-F5-Auth-Token': auth_token}
     try:
-        print(f"Logging out from {bigip_address}...")
+        logging.info(f"Logging out from {bigip_address}...")
         requests.post(logout_url, headers=headers, verify=False)
     except Exception as e:
-        print(f"Logout failed for {bigip_address}: {e}")
+        logging.error(f"Logout failed for {bigip_address}: {e}")
 
 # Function to retrieve device hostname
 def get_device_hostname(bigip_address, auth_token):
@@ -68,15 +90,15 @@ def get_device_hostname(bigip_address, auth_token):
     hostname_url = f"{base_uri}/tm/sys/global-settings"
     headers = {'X-F5-Auth-Token': auth_token}
     try:
-        print(f"Retrieving hostname from {bigip_address}...")
+        logging.info(f"Retrieving hostname from {bigip_address}...")
         response = requests.get(hostname_url, headers=headers, verify=False)
         response.raise_for_status()
         global_settings = response.json()
         hostname = global_settings.get('hostname', 'Unknown')
-        print(f"Hostname for {bigip_address} is {hostname}.")
+        logging.info(f"Hostname for {bigip_address} is {hostname}.")
         return hostname
     except Exception as e:
-        print(f"Failed to retrieve hostname from {bigip_address}: {e}")
+        logging.error(f"Failed to retrieve hostname from {bigip_address}: {e}")
         return 'Unknown'
 
 # Dictionaries to keep track of virtual servers and pool members per device
@@ -87,7 +109,7 @@ problematic_vs = []
 
 # Iterate over the BIG-IP addresses and collect stats from each
 for bigip_address in bigip_addresses:
-    print(f"Processing BIG-IP device at {bigip_address}...")
+    logging.info(f"Processing BIG-IP device at {bigip_address}...")
     auth_token = get_auth_token(bigip_address)
     if auth_token:
         base_uri = f"https://{bigip_address}/mgmt"
@@ -99,7 +121,7 @@ for bigip_address in bigip_addresses:
 
         # Retrieve virtual server list
         try:
-            print(f"Retrieving virtual server list from {bigip_address}...")
+            logging.info(f"Retrieving virtual server list from {bigip_address}...")
             vs_list_url = f"{base_uri}/tm/ltm/virtual"
             response = requests.get(vs_list_url, headers=headers, verify=False)
             response.raise_for_status()
@@ -107,7 +129,7 @@ for bigip_address in bigip_addresses:
             time.sleep(0.2)  # Pause to prevent rate limiting
             virtual_servers = vs_list_response.get('items', [])
         except Exception as e:
-            print(f"Failed to retrieve virtual server list from {bigip_address}: {e}")
+            logging.error(f"Failed to retrieve virtual server list from {bigip_address}: {e}")
             logout(bigip_address, auth_token)
             continue
 
@@ -118,10 +140,10 @@ for bigip_address in bigip_addresses:
 
             # Log the constructed URL
             vs_config_url = f"{base_uri}/tm/ltm/virtual/{vs_name_encoded}?options=pool"
-            print(f"Constructed URL: {vs_config_url}")
+            logging.info(f"Constructed URL: {vs_config_url}")
 
             try:
-                print(f"Retrieving virtual server configuration for {vs_name}...")
+                logging.info(f"Retrieving virtual server configuration for {vs_name}...")
                 response = requests.get(vs_config_url, headers=headers, verify=False)
                 response.raise_for_status()
                 vs_config_response = response.json()
@@ -130,7 +152,7 @@ for bigip_address in bigip_addresses:
 
                 # Retrieve virtual server status
                 vs_status_url = f"{base_uri}/tm/ltm/virtual/{vs_name_encoded}/stats"
-                print(f"Retrieving virtual server status for {vs_name}...")
+                logging.info(f"Retrieving virtual server status for {vs_name}...")
                 response = requests.get(vs_status_url, headers=headers, verify=False)
                 response.raise_for_status()
                 vs_status_response = response.json()
@@ -141,19 +163,25 @@ for bigip_address in bigip_addresses:
                 vs_status_entry = next(iter(entries.values()))
                 vs_status = vs_status_entry['nestedStats']['entries']['status.availabilityState']['description']
 
+                # Extract connections and max connections
+                connections = vs_status_entry['nestedStats']['entries'].get('clientside.curConns', {}).get('description', 'N/A')
+                max_connections = vs_status_entry['nestedStats']['entries'].get('clientside.maxConns', {}).get('description', 'N/A')
+
+                # Updated vs_stat dictionary without Destination, IPProtocol, and Enabled
                 vs_stat = {
                     'Device': bigip_address,
                     'Hostname': hostname,
                     'VirtualServerName': vs_config_response.get('fullPath', ''),
-                    'Destination': vs_config_response.get('destination', ''),
-                    'IPProtocol': vs_config_response.get('ipProtocol', ''),
-                    'Enabled': vs_config_response.get('enabled', ''),
                     'Status': vs_status,
+                    'Connections': connections,           # New field
+                    'MaxConnections': max_connections,   # New field
                     'Pool': pool_name or 'No Pool'
                 }
                 virtual_servers_by_device[bigip_address].append(vs_stat)  # Collecting virtual servers per device
+                logging.info(f"Collected stats for virtual server {vs_stat['VirtualServerName']}.")
+
             except Exception as e:
-                print(f"Failed to retrieve configuration or status for virtual server {vs_name} on {bigip_address}: {e}")
+                logging.error(f"Failed to retrieve configuration or status for virtual server {vs_name} on {bigip_address}: {e}")
                 # Add the problematic virtual server to the list
                 problematic_vs.append({
                     'Device': bigip_address,
@@ -167,10 +195,10 @@ for bigip_address in bigip_addresses:
                 # URL-encode the pool name
                 pool_name_encoded = quote(pool_name, safe='')
                 pool_members_url = f"{base_uri}/tm/ltm/pool/{pool_name_encoded}/members"
-                print(f"Constructed URL for pool members: {pool_members_url}")
+                logging.info(f"Constructed URL for pool members: {pool_members_url}")
 
                 try:
-                    print(f"Retrieving pool member information for pool {pool_name}...")
+                    logging.info(f"Retrieving pool member information for pool {pool_name}...")
                     response = requests.get(pool_members_url, headers=headers, verify=False)
                     response.raise_for_status()
                     pool_members_response = response.json()
@@ -190,19 +218,21 @@ for bigip_address in bigip_addresses:
                             'Enabled': member.get('enabled', '')
                         }
                         pool_members_by_device_vs[bigip_address][vs_config_response.get('fullPath', '')].append(member_stat)
+                    logging.info(f"Collected pool members for pool {pool_name}.")
+
                 except Exception as e:
-                    print(f"Failed to retrieve pool members for pool {pool_name} on {bigip_address}: {e}")
+                    logging.error(f"Failed to retrieve pool members for pool {pool_name} on {bigip_address}: {e}")
                     continue
             else:
-                print(f"Virtual server {vs_name} does not have an associated pool.")
+                logging.info(f"Virtual server {vs_name} does not have an associated pool.")
 
         # Logout to invalidate the authentication token
         logout(bigip_address, auth_token)
     else:
-        print(f"Skipping {bigip_address} due to authentication failure.")
+        logging.warning(f"Skipping {bigip_address} due to authentication failure.")
 
 # Generate the main Markdown file
-main_md_file = "README.md"  # Change from "index.md" to "README.md"
+main_md_file = os.path.join(output_dir, "README.md")  # Change from "index.md" to "README.md"
 with open(main_md_file, 'w', encoding='utf-8') as mdfile:
     mdfile.write("# F5 Devices Overview\n\n")
     mdfile.write("| Device IP | Hostname | Virtual Server Count |\n")
@@ -213,14 +243,14 @@ with open(main_md_file, 'w', encoding='utf-8') as mdfile:
         device_md_filename = f"device_{device_ip.replace('.', '_')}.md"
         mdfile.write(f"| [{device_ip}]({device_md_filename}) | {hostname} | {vs_count} |\n")
 
-print(f"Main Markdown file generated: {main_md_file}")
+logging.info(f"Main Markdown file generated: {main_md_file}")
 
 # Generate Markdown and CSV files per device
 for device_ip in bigip_addresses:
     hostname = hostnames_by_device.get(device_ip, 'Unknown')
-    device_md_filename = f"device_{device_ip.replace('.', '_')}.md"
-    vs_csv_filename = f"virtual_servers_{device_ip.replace('.', '_')}.csv"
-    pool_csv_filename = f"pool_members_{device_ip.replace('.', '_')}.csv"
+    device_md_filename = os.path.join(output_dir, f"device_{device_ip.replace('.', '_')}.md")
+    vs_csv_filename = os.path.join(output_dir, f"virtual_servers_{device_ip.replace('.', '_')}.csv")
+    pool_csv_filename = os.path.join(output_dir, f"pool_members_{device_ip.replace('.', '_')}.csv")
 
     # Generate Markdown file for the device
     with open(device_md_filename, 'w', encoding='utf-8') as mdfile:
@@ -228,12 +258,13 @@ for device_ip in bigip_addresses:
 
         # Virtual Servers Table
         mdfile.write("## Virtual Servers\n\n")
-        mdfile.write("| Virtual Server Name | Destination | IP Protocol | Enabled | Status | Pool |\n")
-        mdfile.write("|---------------------|-------------|-------------|---------|--------|------|\n")
+        # Updated table headers to exclude Destination, IP Protocol, and Enabled
+        mdfile.write("| Virtual Server Name | Status | Connections | Max Connections | Pool |\n")
+        mdfile.write("|---------------------|--------|-------------|-----------------|------|\n")
 
         for vs_stat in virtual_servers_by_device[device_ip]:
             vs_name_anchor = vs_stat['VirtualServerName'].replace('/', '_').replace(' ', '_')
-            mdfile.write(f"| [{vs_stat['VirtualServerName']}](#{vs_name_anchor}) | {vs_stat['Destination']} | {vs_stat['IPProtocol']} | {vs_stat['Enabled']} | {vs_stat['Status']} | {vs_stat['Pool']} |\n")
+            mdfile.write(f"| [{vs_stat['VirtualServerName']}](#{vs_name_anchor}) | {vs_stat['Status']} | {vs_stat['Connections']} | {vs_stat['MaxConnections']} | {vs_stat['Pool']} |\n")
 
         mdfile.write("\n")
 
@@ -255,17 +286,18 @@ for device_ip in bigip_addresses:
             else:
                 mdfile.write("No pool members associated with this virtual server.\n\n")
 
-    print(f"Markdown file for device {device_ip} generated: {device_md_filename}")
+    logging.info(f"Markdown file for device {device_ip} generated: {device_md_filename}")
 
     # Export virtual server stats to CSV
     if virtual_servers_by_device[device_ip]:
         with open(vs_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'Destination', 'IPProtocol', 'Enabled', 'Status', 'Pool']
+            # Updated fieldnames to exclude Destination, IPProtocol, and Enabled
+            fieldnames = ['Device', 'Hostname', 'VirtualServerName', 'Status', 'Connections', 'MaxConnections', 'Pool']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for vs_stat in virtual_servers_by_device[device_ip]:
                 writer.writerow(vs_stat)
-        print(f"Virtual server CSV for device {device_ip} exported: {vs_csv_filename}")
+        logging.info(f"Virtual server CSV for device {device_ip} exported: {vs_csv_filename}")
 
     # Export pool member stats to CSV
     pool_members = []
@@ -278,17 +310,17 @@ for device_ip in bigip_addresses:
             writer.writeheader()
             for member_stat in pool_members:
                 writer.writerow(member_stat)
-        print(f"Pool member CSV for device {device_ip} exported: {pool_csv_filename}")
+        logging.info(f"Pool member CSV for device {device_ip} exported: {pool_csv_filename}")
 
 # Export list of problematic virtual servers if any
 if problematic_vs:
-    problematic_vs_output_file = "problematic_virtual_servers.csv"
+    problematic_vs_output_file = os.path.join(output_dir, "problematic_virtual_servers.csv")
     with open(problematic_vs_output_file, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = ['Device', 'VirtualServer', 'ErrorMessage']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for entry in problematic_vs:
             writer.writerow(entry)
-    print(f"List of problematic virtual servers exported to {problematic_vs_output_file}.")
+    logging.info(f"List of problematic virtual servers exported to {problematic_vs_output_file}.")
 
-print("Script execution completed.")
+logging.info("Script execution completed.")
