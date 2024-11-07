@@ -1,0 +1,6 @@
+Device,Hostname,VirtualServerName,PoolName,MemberName,Address,State,Session,MonitorStatus,Enabled
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,juiceshop_pool,/Common/server01:80,172.16.10.114,down,monitor-enabled,,
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,juiceshop_pool,/Common/server01:81,172.16.10.114,down,monitor-enabled,,
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,juiceshop_pool,/Common/server01:82,172.16.10.114,down,monitor-enabled,,
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,juiceshop_pool,/Common/server01:83,172.16.10.114,down,monitor-enabled,,
+f5.maniak.lab,bigip.maniak.lab,juiceshop_vs,juiceshop_pool,/Common/server01:84,172.16.10.114,down,monitor-enabled,,
